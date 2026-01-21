@@ -1,6 +1,7 @@
 import { X, Plus, Trash2, Check, Edit2, Home, Music, Copy, MoreVertical, LogIn, LogOut, User, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import RockIcon from "@/imports/RockIcon-48-634";
+import { listsAPI } from "@/app/services/api";
 
 interface Song {
   id: number;
@@ -58,12 +59,43 @@ export function StageListManager({
   const [editingName, setEditingName] = useState("");
   const [newListName, setNewListName] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [savedLists, setSavedLists] = useState<SavedStageList[]>([]);
+  const [isLoadingLists, setIsLoadingLists] = useState(false);
+
+  // Load lists from cloud if user is authenticated, otherwise from localStorage
+  useEffect(() => {
+    const loadLists = async () => {
+      if (!isOpen) return;
+      
+      setIsLoadingLists(true);
+      try {
+        if (user) {
+          // Load from cloud
+          const cloudLists = await listsAPI.getAll();
+          setSavedLists(cloudLists);
+          // Also update localStorage for offline access
+          localStorage.setItem("stageLists", JSON.stringify(cloudLists));
+        } else {
+          // Load from localStorage
+          const savedListsJson = localStorage.getItem("stageLists");
+          const localLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
+          setSavedLists(localLists);
+        }
+      } catch (error) {
+        console.error("Failed to load lists:", error);
+        // Fallback to localStorage
+        const savedListsJson = localStorage.getItem("stageLists");
+        const localLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
+        setSavedLists(localLists);
+      } finally {
+        setIsLoadingLists(false);
+      }
+    };
+
+    loadLists();
+  }, [isOpen, user]);
 
   if (!isOpen) return null;
-
-  // Load all saved lists from localStorage
-  const savedListsJson = localStorage.getItem("stageLists");
-  const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
 
   const handleCreateNew = () => {
     onCreateNewList();
@@ -171,8 +203,19 @@ export function StageListManager({
             </button>
           </div>
 
+          {/* Loading State */}
+          {isLoadingLists && (
+            <div className="text-center py-20">
+              <div className="w-20 h-20 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6 animate-pulse">
+                <Music className="w-10 h-10 text-white/30" />
+              </div>
+              <h3 className="text-2xl font-bold text-white/60 mb-2">Loading your stage lists...</h3>
+              <p className="text-white/40">{user ? "Syncing from cloud" : "Loading from device"}</p>
+            </div>
+          )}
+
           {/* Saved Lists Grid */}
-          {savedLists.length > 0 && (
+          {!isLoadingLists && savedLists.length > 0 && (
             <div>
               <h2 className="text-2xl md:text-3xl font-bold text-white mb-6 md:mb-8 flex items-center gap-3">
                 <span>My Stage Lists</span>
@@ -322,7 +365,7 @@ export function StageListManager({
           )}
 
           {/* Empty State */}
-          {savedLists.length === 0 && (
+          {!isLoadingLists && savedLists.length === 0 && (
             <div className="text-center py-20">
               <div className="w-20 h-20 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Music className="w-10 h-10 text-white/30" />

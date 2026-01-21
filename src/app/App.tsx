@@ -452,7 +452,7 @@ export default function App() {
   }, []);
 
   // Stage List Management Functions
-  const handleSaveCurrentAs = (name: string) => {
+  const handleSaveCurrentAs = async (name: string) => {
     const savedListsJson = localStorage.getItem('stageLists');
     const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
     
@@ -465,6 +465,15 @@ export default function App() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    
+    // Save to cloud if authenticated
+    if (cloudSyncEnabled && user) {
+      try {
+        await listsAPI.create(newList);
+      } catch (error) {
+        console.error('Failed to save list to cloud:', error);
+      }
+    }
     
     const updatedLists = [...savedLists, newList];
     localStorage.setItem('stageLists', JSON.stringify(updatedLists));
@@ -482,7 +491,7 @@ export default function App() {
     setPlayingSongs(new Set()); // Stop any playing songs
   };
 
-  const handleRenameList = (id: string, newName: string) => {
+  const handleRenameList = async (id: string, newName: string) => {
     const savedListsJson = localStorage.getItem('stageLists');
     const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
     
@@ -491,6 +500,18 @@ export default function App() {
         ? { ...list, name: newName, updatedAt: new Date().toISOString() }
         : list
     );
+    
+    // Update in cloud if authenticated
+    if (cloudSyncEnabled && user) {
+      try {
+        await listsAPI.update(id, {
+          name: newName,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error('Failed to rename list in cloud:', error);
+      }
+    }
     
     localStorage.setItem('stageLists', JSON.stringify(updatedLists));
     
@@ -532,7 +553,7 @@ export default function App() {
     setPlayingSongs(new Set());
   };
 
-  const handleDuplicateList = (list: SavedStageList) => {
+  const handleDuplicateList = async (list: SavedStageList) => {
     const savedListsJson = localStorage.getItem('stageLists');
     const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
     
@@ -544,6 +565,15 @@ export default function App() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    
+    // Save to cloud if authenticated
+    if (cloudSyncEnabled && user) {
+      try {
+        await listsAPI.create(duplicatedList);
+      } catch (error) {
+        console.error('Failed to duplicate list in cloud:', error);
+      }
+    }
     
     const updatedLists = [...savedLists, duplicatedList];
     localStorage.setItem('stageLists', JSON.stringify(updatedLists));
