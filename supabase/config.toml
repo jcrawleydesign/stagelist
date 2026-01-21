@@ -1,0 +1,5 @@
+[project]
+name = "stage-list"
+
+[functions.make-server-2567dc62]
+verify_jwt = false
