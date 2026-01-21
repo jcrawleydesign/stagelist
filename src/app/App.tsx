@@ -1059,6 +1059,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    console.log('🚪 Starting logout process...');
     try {
       // Save current data to cloud BEFORE logging out
       if (user && cloudSyncEnabled && !isLoadingFromCloud) {
@@ -1096,17 +1097,53 @@ export default function App() {
         }
       }
       
+      // Always attempt to sign out, even if save failed
+      console.log('🔐 Signing out...');
       await authService.signOut();
+      console.log('✅ Sign out successful');
+      
+      // Update state
       setUser(null);
       setCloudSyncEnabled(false);
       // Close the StageListManager modal
       setIsListManagerOpen(false);
-      // Reset to a new empty stage list
-      handleCreateNewList();
+      
+      // Reset to a new empty stage list (wrap in try-catch to ensure logout continues)
+      try {
+        handleCreateNewList();
+      } catch (error) {
+        console.error('⚠️ Error creating new list during logout:', error);
+      }
+      
       // Reload the page to ensure clean state
+      console.log('🔄 Reloading page...');
       window.location.reload();
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('❌ Logout error:', error);
+      // Even if there's an error, try to clear local state and reload
+      try {
+        setUser(null);
+        setCloudSyncEnabled(false);
+        setIsListManagerOpen(false);
+        // Force sign out from localStorage/sessionStorage
+        await authService.signOut().catch(() => {
+          // If signOut fails, clear Supabase storage manually
+          const supabaseStorageKey = `sb-${projectId}-auth-token`;
+          localStorage.removeItem(supabaseStorageKey);
+          // Clear all Supabase-related keys
+          Object.keys(localStorage).forEach(key => {
+            if (key.includes('supabase') || key.includes(projectId)) {
+              localStorage.removeItem(key);
+            }
+          });
+          sessionStorage.clear();
+        });
+        window.location.reload();
+      } catch (finalError) {
+        console.error('❌ Critical error during logout cleanup:', finalError);
+        // Last resort: force reload
+        window.location.reload();
+      }
     }
   };
 
@@ -1171,7 +1208,12 @@ export default function App() {
                     </span>
                   </div>
                   <button
-                    onClick={handleLogout}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleLogout();
+                    }}
                     className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 text-white/70 hover:text-white hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors"
                     aria-label="Logout"
                   >

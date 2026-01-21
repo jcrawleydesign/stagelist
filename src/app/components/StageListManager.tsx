@@ -130,7 +130,16 @@ export function StageListManager({
               <span className="text-white/70 text-sm">{user.email}</span>
             </div>
             <button
-              onClick={onLogout}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (onLogout) {
+                  onLogout();
+                } else {
+                  console.error('onLogout handler is not defined');
+                }
+              }}
               className="flex items-center gap-2 px-4 py-2.5 backdrop-blur-xl bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 text-white rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg"
               aria-label="Logout"
             >
