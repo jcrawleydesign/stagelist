@@ -8,7 +8,7 @@ import { ShareModal } from "@/app/components/ShareModal";
 import { StageListManager } from "@/app/components/StageListManager";
 import { SettingsModal } from "@/app/components/SettingsModal";
 import { AuthModal } from "@/app/components/AuthModal";
-import { Volume2, VolumeX, Edit2, Check, X, Save, Home, Settings, LogIn, LogOut, User } from "lucide-react";
+import { Volume2, VolumeX, Edit2, Check, X, Save, Home, Settings, LogIn, LogOut, User, UserPlus, Cloud } from "lucide-react";
 import { useMetronome, MetronomeSound } from "@/app/hooks/useMetronome";
 import RockIcon from "@/imports/RockIcon-48-634";
 import { listsAPI, settingsAPI } from "@/app/services/api";
@@ -60,8 +60,9 @@ export default function App() {
   
   const [songs, setSongs] = useState<Song[]>(() => {
     // Load from localStorage on initial render
+    // If no saved data, start with empty array (logged-out users get empty list)
     const saved = localStorage.getItem('stageListSongs');
-    return saved ? JSON.parse(saved) : initialSongs;
+    return saved ? JSON.parse(saved) : [];
   });
   const [playingSongs, setPlayingSongs] = useState<Set<number>>(new Set());
   const [volume, setVolume] = useState(0.3);
@@ -72,7 +73,7 @@ export default function App() {
   });
   const [nextId, setNextId] = useState(() => {
     const saved = localStorage.getItem('stageListNextId');
-    return saved ? JSON.parse(saved) : 6;
+    return saved ? JSON.parse(saved) : 1;
   });
   const [pageTitle, setPageTitle] = useState(() => {
     const saved = localStorage.getItem('stageListTitle');
@@ -81,12 +82,19 @@ export default function App() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState(pageTitle);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-  const [isListManagerOpen, setIsListManagerOpen] = useState(true); // Changed to true
+  const [isListManagerOpen, setIsListManagerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(true);
   const [isLoadingFromCloud, setIsLoadingFromCloud] = useState(false); // Changed to false - no loading screen
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(false); // Start as false until we verify auth
   const [user, setUser] = useState<any | null>(null);
+
+  // Ensure StageListManager never opens for non-logged-in users
+  useEffect(() => {
+    if (!user && isListManagerOpen) {
+      setIsListManagerOpen(false);
+    }
+  }, [user, isListManagerOpen]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
 
@@ -433,11 +441,13 @@ export default function App() {
   // Always call the hook, but only play when not loading
   useMetronome(currentBpm, isPlaying && !isLoadingFromCloud, volume, isMuted, metronomeSound);
 
-  // Initialize first list save
+  // Initialize first list save (only for logged-in users)
   useEffect(() => {
+    if (!user) return; // Only create saved lists for logged-in users
+    
     const savedLists = localStorage.getItem('stageLists');
     if (!savedLists) {
-      // First time user - save current list as "my first Stage List"
+      // First time logged-in user - save current list as "my first Stage List"
       const firstList: SavedStageList = {
         id: 'default',
         name: 'my first Stage List',
@@ -449,10 +459,16 @@ export default function App() {
       localStorage.setItem('stageLists', JSON.stringify([firstList]));
       localStorage.setItem('currentStageListId', 'default');
     }
-  }, []);
+  }, [user, songs, nextId]);
 
   // Stage List Management Functions
   const handleSaveCurrentAs = async (name: string) => {
+    // Only allow saving lists when logged in
+    if (!user) {
+      console.warn('Please log in to save stage lists');
+      return;
+    }
+    
     const savedListsJson = localStorage.getItem('stageLists');
     const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
     
@@ -554,6 +570,12 @@ export default function App() {
   };
 
   const handleDuplicateList = async (list: SavedStageList) => {
+    // Only allow duplicating lists when logged in
+    if (!user) {
+      console.warn('Please log in to duplicate stage lists');
+      return;
+    }
+    
     const savedListsJson = localStorage.getItem('stageLists');
     const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
     
@@ -582,34 +604,36 @@ export default function App() {
     handleLoadList(duplicatedList);
   };
 
-  // Update current list whenever changes are made
+  // Update current list whenever changes are made (only for logged-in users)
   useEffect(() => {
-    if (currentListId) {
-      const savedListsJson = localStorage.getItem('stageLists');
-      const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
-      
-      const updatedLists = savedLists.map(list =>
-        list.id === currentListId
-          ? { ...list, name: pageTitle, songs, nextId, updatedAt: new Date().toISOString() }
-          : list
-      );
-      
-      // If current list doesn't exist in saved lists, add it
-      if (!savedLists.find(list => list.id === currentListId)) {
-        const newList: SavedStageList = {
-          id: currentListId,
-          name: pageTitle,
-          songs,
-          nextId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        updatedLists.push(newList);
-      }
-      
-      localStorage.setItem('stageLists', JSON.stringify(updatedLists));
+    // Only save to stageLists array when user is logged in
+    // Non-logged-in users' data is still saved to individual localStorage keys
+    if (!user || !currentListId) return;
+    
+    const savedListsJson = localStorage.getItem('stageLists');
+    const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
+    
+    const updatedLists = savedLists.map(list =>
+      list.id === currentListId
+        ? { ...list, name: pageTitle, songs, nextId, updatedAt: new Date().toISOString() }
+        : list
+    );
+    
+    // If current list doesn't exist in saved lists, add it
+    if (!savedLists.find(list => list.id === currentListId)) {
+      const newList: SavedStageList = {
+        id: currentListId,
+        name: pageTitle,
+        songs,
+        nextId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      updatedLists.push(newList);
     }
-  }, [songs, pageTitle, nextId, currentListId]);
+    
+    localStorage.setItem('stageLists', JSON.stringify(updatedLists));
+  }, [songs, pageTitle, nextId, currentListId, user]);
 
   const handleShare = async () => {
     const shareData = {
@@ -665,6 +689,11 @@ export default function App() {
       await authService.signOut();
       setUser(null);
       setCloudSyncEnabled(false);
+      // Close the StageListManager modal
+      setIsListManagerOpen(false);
+      // Reset to a new empty stage list
+      handleCreateNewList();
+      // Reload the page to ensure clean state
       window.location.reload();
     } catch (error) {
       console.error('Logout error:', error);
@@ -687,14 +716,16 @@ export default function App() {
             
             {/* Navigation Links */}
             <div className="flex items-center gap-2 md:gap-3">
-              <button
-                onClick={() => setIsListManagerOpen(true)}
-                className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 text-white/70 hover:text-white hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors"
-                aria-label="Go home"
-              >
-                <Home size={20} />
-                <span className="hidden sm:inline">Home</span>
-              </button>
+              {user && (
+                <button
+                  onClick={() => setIsListManagerOpen(true)}
+                  className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 text-white/70 hover:text-white hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors"
+                  aria-label="Go home"
+                >
+                  <Home size={20} />
+                  <span className="hidden sm:inline">Home</span>
+                </button>
+              )}
               <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 text-white/70 hover:text-white hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors"
@@ -859,6 +890,49 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* Sign Up CTA Banner - Only show for non-logged-in users */}
+            {!user && (
+              <div className="backdrop-blur-xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 rounded-2xl p-4 md:p-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4 flex-1">
+                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
+                      <Cloud size={24} className="text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg md:text-xl font-bold text-white mb-1">
+                        Sign up for free to save and manage your stage lists
+                      </h3>
+                      <p className="text-white/70 text-sm md:text-base">
+                        Create a free account to save multiple stage lists, sync across devices, and never lose your setlists. No credit card required.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <button
+                      onClick={() => {
+                        setAuthModalMode('signin');
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 backdrop-blur-sm bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 text-white rounded-xl transition-all hover:scale-105 active:scale-95 font-medium flex-1 sm:flex-initial"
+                    >
+                      <LogIn size={18} />
+                      <span>Login</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAuthModalMode('signup');
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 active:from-purple-700 active:to-pink-700 text-white rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg hover:shadow-purple-500/50 font-medium flex-1 sm:flex-initial"
+                    >
+                      <UserPlus size={18} />
+                      <span>Sign Up</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Header Row - Hidden on mobile */}
             {songs.length > 0 && (

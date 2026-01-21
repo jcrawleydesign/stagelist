@@ -62,7 +62,7 @@ export function StageListManager({
   const [savedLists, setSavedLists] = useState<SavedStageList[]>([]);
   const [isLoadingLists, setIsLoadingLists] = useState(false);
 
-  // Load lists from cloud if user is authenticated, otherwise from localStorage
+  // Load lists from cloud if user is authenticated (non-logged-in users don't see saved lists)
   useEffect(() => {
     const loadLists = async () => {
       if (!isOpen) return;
@@ -76,17 +76,19 @@ export function StageListManager({
           // Also update localStorage for offline access
           localStorage.setItem("stageLists", JSON.stringify(cloudLists));
         } else {
-          // Load from localStorage
-          const savedListsJson = localStorage.getItem("stageLists");
-          const localLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
-          setSavedLists(localLists);
+          // Non-logged-in users don't see saved lists
+          setSavedLists([]);
         }
       } catch (error) {
         console.error("Failed to load lists:", error);
-        // Fallback to localStorage
-        const savedListsJson = localStorage.getItem("stageLists");
-        const localLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
-        setSavedLists(localLists);
+        // If error and user is logged in, fallback to localStorage
+        if (user) {
+          const savedListsJson = localStorage.getItem("stageLists");
+          const localLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
+          setSavedLists(localLists);
+        } else {
+          setSavedLists([]);
+        }
       } finally {
         setIsLoadingLists(false);
       }
@@ -214,8 +216,8 @@ export function StageListManager({
             </div>
           )}
 
-          {/* Saved Lists Grid */}
-          {!isLoadingLists && savedLists.length > 0 && (
+          {/* Saved Lists Grid - Only show for logged-in users */}
+          {!isLoadingLists && savedLists.length > 0 && user && (
             <div>
               <h2 className="text-2xl md:text-3xl font-bold text-white mb-6 md:mb-8 flex items-center gap-3">
                 <span>My Stage Lists</span>
@@ -298,18 +300,20 @@ export function StageListManager({
                               
                               {/* Menu */}
                               <div className="absolute top-12 right-0 z-20 w-48 backdrop-blur-xl bg-slate-900/95 border border-white/20 rounded-xl shadow-2xl overflow-hidden">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDuplicateList(list);
-                                    onClose();
-                                    setOpenMenuId(null);
-                                  }}
-                                  className="w-full px-4 py-3 flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/10 transition-colors text-left"
-                                >
-                                  <Copy size={18} />
-                                  <span>Duplicate</span>
-                                </button>
+                                {user && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDuplicateList(list);
+                                      onClose();
+                                      setOpenMenuId(null);
+                                    }}
+                                    className="w-full px-4 py-3 flex items-center gap-3 text-white/70 hover:text-white hover:bg-white/10 transition-colors text-left"
+                                  >
+                                    <Copy size={18} />
+                                    <span>Duplicate</span>
+                                  </button>
+                                )}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -370,8 +374,33 @@ export function StageListManager({
               <div className="w-20 h-20 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Music className="w-10 h-10 text-white/30" />
               </div>
-              <h3 className="text-2xl font-bold text-white/60 mb-2">No stage lists yet</h3>
-              <p className="text-white/40">Create your first stage list to get started</p>
+              {user ? (
+                <>
+                  <h3 className="text-2xl font-bold text-white/60 mb-2">No stage lists yet</h3>
+                  <p className="text-white/40">Create your first stage list to get started</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-2xl font-bold text-white/60 mb-2">Sign in to save stage lists</h3>
+                  <p className="text-white/40 mb-6">Log in to save and manage multiple stage lists</p>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => onOpenAuth?.('signin')}
+                      className="flex items-center gap-2 px-6 py-3 backdrop-blur-xl bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 text-white rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg"
+                    >
+                      <LogIn size={20} />
+                      <span className="font-medium">Login</span>
+                    </button>
+                    <button
+                      onClick={() => onOpenAuth?.('signup')}
+                      className="flex items-center gap-2 px-6 py-3 backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 border border-purple-500/30 hover:border-purple-400/50 text-white rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg"
+                    >
+                      <UserPlus size={20} />
+                      <span className="font-medium">Sign Up</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
