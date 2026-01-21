@@ -1,8 +1,8 @@
 {
-  "buildCommand": "pnpm build",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "devCommand": "pnpm dev",
-  "installCommand": "rm -rf node_modules && pnpm store prune && pnpm install --shamefully-hoist",
+  "devCommand": "npm run dev",
+  "installCommand": "rm -rf node_modules && npm install",
   "framework": "vite",
   "rewrites": [
     {
