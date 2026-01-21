@@ -152,6 +152,17 @@ app.post("/make-server-2567dc62/signup", async (c) => {
       return c.json({ error: 'Email and password are required' }, 400);
     }
     
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return c.json({ error: 'Please enter a valid email address' }, 400);
+    }
+    
+    // Validate password length
+    if (password.length < 6) {
+      return c.json({ error: 'Password must be at least 6 characters long' }, 400);
+    }
+    
     const supabase = getSupabaseClient(true); // Use service role key
     const { data, error } = await supabase.auth.admin.createUser({
       email,
@@ -163,16 +174,34 @@ app.post("/make-server-2567dc62/signup", async (c) => {
     
     if (error) {
       console.error('Sign up error:', error);
-      return c.json({ error: error.message }, 400);
+      
+      // Provide more user-friendly error messages
+      let errorMessage = error.message;
+      if (error.message?.includes('already registered') || error.message?.includes('already exists')) {
+        errorMessage = 'An account with this email already exists. Please sign in instead.';
+      } else if (error.message?.includes('invalid email')) {
+        errorMessage = 'Please enter a valid email address';
+      } else if (error.message?.includes('password')) {
+        errorMessage = 'Password does not meet requirements. Please use a stronger password.';
+      }
+      
+      return c.json({ error: errorMessage }, 400);
     }
     
+    if (!data?.user) {
+      console.error('Sign up succeeded but no user data returned');
+      return c.json({ error: 'Account created but failed to retrieve user information' }, 500);
+    }
+    
+    console.log('✅ User created successfully:', data.user.id);
     return c.json({ 
       success: true, 
       user: data.user 
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Sign up error:', error);
-    return c.json({ error: 'Sign up failed' }, 500);
+    const errorMessage = error?.message || 'An unexpected error occurred during signup';
+    return c.json({ error: errorMessage }, 500);
   }
 });
 

@@ -85,16 +85,46 @@ export const authService = {
     );
     
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('❌ Sign up error:', errorData);
-      throw new Error(errorData.error || 'Sign up failed');
+      let errorMessage = 'Sign up failed';
+      try {
+        const errorData = await response.json();
+        console.error('❌ Sign up error:', errorData);
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } catch (e) {
+        // If response is not JSON, try to get text
+        const text = await response.text();
+        console.error('❌ Sign up error (non-JSON):', text);
+        errorMessage = text || `Server returned ${response.status}`;
+      }
+      throw new Error(errorMessage);
     }
     
     const result = await response.json();
     console.log('✅ Sign up successful:', result);
     
-    // Now sign in to get a session
-    return this.signIn(email, password);
+    // Wait a brief moment to ensure user is fully created and available
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Now sign in to get a session - retry up to 3 times with delays
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`🔐 Attempting sign in (attempt ${attempt}/3)...`);
+        const signInResult = await this.signIn(email, password);
+        console.log('✅ Sign in successful after signup');
+        return signInResult;
+      } catch (error: any) {
+        console.warn(`⚠️ Sign in attempt ${attempt} failed:`, error.message);
+        lastError = error;
+        // Wait before retrying (exponential backoff)
+        if (attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
+      }
+    }
+    
+    // If all retries failed, throw the last error
+    throw new Error(lastError?.message || 'Failed to sign in after signup. Please try signing in manually.');
   },
 
   async signOut() {

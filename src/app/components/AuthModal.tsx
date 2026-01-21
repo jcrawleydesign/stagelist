@@ -38,11 +38,9 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'signin' }
     try {
       if (mode === 'signup') {
         console.log('Attempting sign up for:', email);
+        // signUp already handles sign-in internally, so we don't need to call signIn again
         await authService.signUp(email, password, name);
-        console.log('Sign up successful, attempting sign in...');
-        // After signup, automatically sign in
-        await authService.signIn(email, password);
-        console.log('Sign in successful after signup');
+        console.log('Sign up and sign in successful');
         onSuccess();
         onClose();
       } else {
@@ -54,7 +52,16 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'signin' }
       }
     } catch (err: any) {
       console.error('Authentication error:', err);
-      setError(err.message || 'Authentication failed');
+      // Provide more helpful error messages
+      let errorMessage = 'Authentication failed';
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.error_description) {
+        errorMessage = err.error_description;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
