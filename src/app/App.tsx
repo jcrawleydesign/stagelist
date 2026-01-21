@@ -498,10 +498,15 @@ export default function App() {
       return;
     }
     
-    const listId = currentListIdRef.current;
-    if (!listId) {
-      console.warn('⚠️ Cannot save: currentListId is missing');
-      return;
+    // Ensure we have a valid list ID (not 'default' or empty)
+    let listId = currentListIdRef.current;
+    if (!listId || listId === 'default') {
+      const newListId = `list_${Date.now()}`;
+      console.log('🆕 Creating new list ID for save:', newListId);
+      setCurrentListId(newListId);
+      currentListIdRef.current = newListId;
+      localStorage.setItem('currentStageListId', newListId);
+      listId = newListId;
     }
     
     try {
@@ -532,14 +537,35 @@ export default function App() {
           updatedAt: new Date().toISOString(),
         });
         console.log('✅ List updated in cloud:', updated.id);
+        // Update list ID if server returned a different one
+        if (updated.id !== listId) {
+          setCurrentListId(updated.id);
+          currentListIdRef.current = updated.id;
+          localStorage.setItem('currentStageListId', updated.id);
+          currentList.id = updated.id;
+        }
       } catch (updateError: any) {
         // List doesn't exist, create it
-        console.log('📝 List not found, creating new list...');
+        console.log('📝 List not found, creating new list...', updateError.message || updateError);
         try {
           const created = await listsAPI.create(currentList);
           console.log('✅ List created in cloud:', created.id);
-        } catch (createError) {
+          // Update the list ID to match what was created
+          if (created.id !== listId) {
+            setCurrentListId(created.id);
+            currentListIdRef.current = created.id;
+            localStorage.setItem('currentStageListId', created.id);
+            currentList.id = created.id;
+          }
+        } catch (createError: any) {
           console.error('❌ Failed to create list:', createError);
+          // Log more details about the error
+          if (createError.message) {
+            console.error('Error message:', createError.message);
+          }
+          if (createError.response) {
+            console.error('Error response:', createError.response);
+          }
           throw createError;
         }
       }
@@ -547,7 +573,7 @@ export default function App() {
       // Update localStorage to keep it in sync
       const savedListsJson = localStorage.getItem('stageLists');
       const savedLists: SavedStageList[] = savedListsJson ? JSON.parse(savedListsJson) : [];
-      const updatedLists = savedLists.filter(list => list.id !== listId);
+      const updatedLists = savedLists.filter(list => list.id !== currentList.id);
       updatedLists.push(currentList);
       localStorage.setItem('stageLists', JSON.stringify(updatedLists));
       
@@ -556,9 +582,14 @@ export default function App() {
       localStorage.setItem('lastSavedTimestamp', now.toISOString());
       setIsSaved(true);
       console.log('✅ Save complete');
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to sync to cloud:', error);
+      // Log error details for debugging
+      if (error.message) {
+        console.error('Error message:', error.message);
+      }
       setIsSaved(false); // Keep as unsaved if error occurred
+      // Don't throw - allow the app to continue functioning
     } finally {
       setIsSaving(false);
     }
@@ -1040,6 +1071,7 @@ export default function App() {
       
       if (error) {
         console.error('❌ Error refreshing session:', error);
+        return;
       }
       
       if (session?.user) {
@@ -1047,9 +1079,9 @@ export default function App() {
         setUser(session.user);
         setCloudSyncEnabled(true);
         
-        // Reload the app to ensure everything syncs properly
-        console.log('🔄 Reloading page to complete login...');
-        window.location.reload();
+        // Don't reload - let the useEffect hooks handle loading data from cloud
+        // The loadFromCloud useEffect will trigger when user changes
+        console.log('✅ Auth success - state updated, cloud sync will load data');
       } else {
         console.warn('⚠️ No session found after auth success');
       }
@@ -1066,7 +1098,7 @@ export default function App() {
         console.log('💾 Saving data to cloud before logout...');
         try {
           const listId = currentListIdRef.current;
-          if (listId) {
+          if (listId && listId !== 'default') {
             const currentList: SavedStageList = {
               id: listId,
               name: pageTitleRef.current,
@@ -1102,35 +1134,55 @@ export default function App() {
       await authService.signOut();
       console.log('✅ Sign out successful');
       
-      // Update state
-      setUser(null);
-      setCloudSyncEnabled(false);
-      // Close the StageListManager modal
-      setIsListManagerOpen(false);
-      
-      // Reset to a new empty stage list (wrap in try-catch to ensure logout continues)
+      // Clear Supabase auth tokens from storage
       try {
-        handleCreateNewList();
-      } catch (error) {
-        console.error('⚠️ Error creating new list during logout:', error);
+        const supabaseStorageKey = `sb-${projectId}-auth-token`;
+        localStorage.removeItem(supabaseStorageKey);
+        // Clear all Supabase-related keys
+        Object.keys(localStorage).forEach(key => {
+          if (key.includes('supabase') || key.includes(projectId)) {
+            localStorage.removeItem(key);
+          }
+        });
+        sessionStorage.clear();
+      } catch (storageError) {
+        console.warn('⚠️ Error clearing storage:', storageError);
       }
       
-      // Reload the page to ensure clean state
-      console.log('🔄 Reloading page...');
-      window.location.reload();
+      // Update state - this will trigger the useEffect that loads guest data
+      setUser(null);
+      setCloudSyncEnabled(false);
+      setIsListManagerOpen(false);
+      
+      // Reset to empty stage list for logged out state
+      setSongs([]);
+      setNextId(1);
+      setPageTitle('Stage List');
+      setCurrentListId('default');
+      setPlayingSongs(new Set());
+      setIsSaved(true);
+      setLastSaved(null);
+      
+      // Ensure CTA banner is visible after logout
+      setIsCTADismissed(false);
+      localStorage.removeItem('ctaDismissed');
+      
+      console.log('✅ Logout complete - showing logged out state');
     } catch (error) {
       console.error('❌ Logout error:', error);
-      // Even if there's an error, try to clear local state and reload
+      // Even if there's an error, try to clear local state
       try {
         setUser(null);
         setCloudSyncEnabled(false);
         setIsListManagerOpen(false);
+        setIsCTADismissed(false);
+        localStorage.removeItem('ctaDismissed');
+        
         // Force sign out from localStorage/sessionStorage
         await authService.signOut().catch(() => {
           // If signOut fails, clear Supabase storage manually
           const supabaseStorageKey = `sb-${projectId}-auth-token`;
           localStorage.removeItem(supabaseStorageKey);
-          // Clear all Supabase-related keys
           Object.keys(localStorage).forEach(key => {
             if (key.includes('supabase') || key.includes(projectId)) {
               localStorage.removeItem(key);
@@ -1138,11 +1190,8 @@ export default function App() {
           });
           sessionStorage.clear();
         });
-        window.location.reload();
       } catch (finalError) {
         console.error('❌ Critical error during logout cleanup:', finalError);
-        // Last resort: force reload
-        window.location.reload();
       }
     }
   };
@@ -1343,48 +1392,50 @@ export default function App() {
                 )}
               </div>
               
-              {/* Audio Controls */}
-              <div className="w-full sm:w-auto flex items-center gap-3 md:gap-4 backdrop-blur-sm bg-white/10 border border-white/20 rounded-xl px-3 md:px-4 py-2.5 md:py-3">
-                <button
-                  onClick={() => setIsMuted(!isMuted)}
-                  className="text-white active:text-white/70 transition-colors p-1.5 active:bg-white/10 rounded-lg"
-                  aria-label={isMuted ? "Unmute" : "Mute"}
-                >
-                  {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                </button>
-                
-                <div className="flex items-center gap-2 md:gap-3 flex-1 sm:flex-initial">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={volume}
-                    onChange={(e) => setVolume(parseFloat(e.target.value))}
-                    className="flex-1 sm:w-24 md:w-32 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer
-                      [&::-webkit-slider-thumb]:appearance-none
-                      [&::-webkit-slider-thumb]:w-4
-                      [&::-webkit-slider-thumb]:h-4
-                      [&::-webkit-slider-thumb]:rounded-full
-                      [&::-webkit-slider-thumb]:bg-white
-                      [&::-webkit-slider-thumb]:cursor-pointer
-                      [&::-moz-range-thumb]:w-4
-                      [&::-moz-range-thumb]:h-4
-                      [&::-moz-range-thumb]:rounded-full
-                      [&::-moz-range-thumb]:bg-white
-                      [&::-moz-range-thumb]:border-0
-                      [&::-moz-range-thumb]:cursor-pointer"
-                  />
-                  <span className="text-white/60 text-sm font-medium min-w-[3ch]">
-                    {Math.round(volume * 100)}
-                  </span>
-                </div>
+              {/* Audio Controls - Only show when songs exist */}
+              {songs.length > 0 && (
+                <div className="w-full sm:w-auto flex items-center gap-3 md:gap-4 backdrop-blur-sm bg-white/10 border border-white/20 rounded-xl px-3 md:px-4 py-2.5 md:py-3">
+                  <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="text-white active:text-white/70 transition-colors p-1.5 active:bg-white/10 rounded-lg"
+                    aria-label={isMuted ? "Unmute" : "Mute"}
+                  >
+                    {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                  </button>
+                  
+                  <div className="flex items-center gap-2 md:gap-3 flex-1 sm:flex-initial">
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={volume}
+                      onChange={(e) => setVolume(parseFloat(e.target.value))}
+                      className="flex-1 sm:w-24 md:w-32 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer
+                        [&::-webkit-slider-thumb]:appearance-none
+                        [&::-webkit-slider-thumb]:w-4
+                        [&::-webkit-slider-thumb]:h-4
+                        [&::-webkit-slider-thumb]:rounded-full
+                        [&::-webkit-slider-thumb]:bg-white
+                        [&::-webkit-slider-thumb]:cursor-pointer
+                        [&::-moz-range-thumb]:w-4
+                        [&::-moz-range-thumb]:h-4
+                        [&::-moz-range-thumb]:rounded-full
+                        [&::-moz-range-thumb]:bg-white
+                        [&::-moz-range-thumb]:border-0
+                        [&::-moz-range-thumb]:cursor-pointer"
+                    />
+                    <span className="text-white/60 text-sm font-medium min-w-[3ch]">
+                      {Math.round(volume * 100)}
+                    </span>
+                  </div>
 
-                <div className="text-sm text-white/60 font-medium pl-2 md:pl-3 border-l border-white/20 whitespace-nowrap">
-                  <span className="hidden sm:inline">{playingSongs.size} playing</span>
-                  <span className="sm:hidden">{playingSongs.size}</span>
+                  <div className="text-sm text-white/60 font-medium pl-2 md:pl-3 border-l border-white/20 whitespace-nowrap">
+                    <span className="hidden sm:inline">{playingSongs.size} playing</span>
+                    <span className="sm:hidden">{playingSongs.size}</span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Sign Up CTA Banner - Only show for non-logged-in users */}

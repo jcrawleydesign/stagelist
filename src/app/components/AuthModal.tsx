@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Mail, Lock, User, AlertCircle } from 'lucide-react';
 import { authService } from '@/app/services/supabase';
+import { getStoredCredentials, storeCredentials, clearStoredCredentials } from '@/utils/deviceFingerprint';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -16,15 +17,39 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'signin' }
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  // Load stored credentials when modal opens in signin mode
+  useEffect(() => {
+    if (isOpen && mode === 'signin') {
+      const stored = getStoredCredentials();
+      if (stored) {
+        setEmail(stored.email);
+        setPassword(stored.password);
+        setRememberMe(true);
+        console.log('✅ Loaded stored credentials for device');
+      } else {
+        setEmail('');
+        setPassword('');
+        setRememberMe(false);
+      }
+    }
+  }, [isOpen, mode]);
 
   // Update mode when initialMode changes and reset form
   useEffect(() => {
     if (isOpen) {
       setMode(initialMode);
       setError('');
+      setName('');
+      // Don't reset email/password here - let the remember me effect handle it
+    } else {
+      // Clear form when modal closes
       setEmail('');
       setPassword('');
       setName('');
+      setRememberMe(false);
+      setError('');
     }
   }, [initialMode, isOpen]);
 
@@ -41,12 +66,23 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'signin' }
         // signUp already handles sign-in internally, so we don't need to call signIn again
         await authService.signUp(email, password, name);
         console.log('Sign up and sign in successful');
+        // Don't store credentials for signup - only for signin with Remember Me
         onSuccess();
         onClose();
       } else {
         console.log('Attempting sign in for:', email);
         const result = await authService.signIn(email, password);
         console.log('Sign in successful, session:', result);
+        
+        // Store credentials if Remember Me is checked
+        if (rememberMe) {
+          storeCredentials(email, password);
+          console.log('✅ Credentials stored for Remember Me');
+        } else {
+          // Clear stored credentials if user unchecks Remember Me
+          clearStoredCredentials();
+        }
+        
         onSuccess();
         onClose();
       }
@@ -70,6 +106,10 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'signin' }
   const switchMode = () => {
     setMode(mode === 'signin' ? 'signup' : 'signin');
     setError('');
+    // Clear password when switching modes for security
+    setPassword('');
+    setName('');
+    setRememberMe(false);
   };
 
   return (
@@ -160,6 +200,22 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'signin' }
               />
             </div>
           </div>
+
+          {/* Remember Me checkbox - only show for signin */}
+          {mode === 'signin' && (
+            <div className="flex items-center">
+              <input
+                id="rememberMe"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-white/20 bg-white/5 text-purple-500 focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-0 cursor-pointer"
+              />
+              <label htmlFor="rememberMe" className="ml-2 text-sm text-white/70 cursor-pointer">
+                Remember Me
+              </label>
+            </div>
+          )}
 
           <button
             type="submit"
