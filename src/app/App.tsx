@@ -59,10 +59,9 @@ export default function App() {
   });
   
   const [songs, setSongs] = useState<Song[]>(() => {
-    // Load from localStorage on initial render
-    // If no saved data, start with empty array (logged-out users get empty list)
-    const saved = localStorage.getItem('stageListSongs');
-    return saved ? JSON.parse(saved) : [];
+    // Always start with empty array - will be populated from cloud for logged-in users
+    // or cleared for logged-out users in useEffect
+    return [];
   });
   const [playingSongs, setPlayingSongs] = useState<Set<number>>(new Set());
   const [volume, setVolume] = useState(0.3);
@@ -97,6 +96,10 @@ export default function App() {
   }, [user, isListManagerOpen]);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
+  const [isCTADismissed, setIsCTADismissed] = useState(() => {
+    const dismissed = localStorage.getItem('ctaDismissed');
+    return dismissed === 'true';
+  });
 
   // Check for existing session on mount
   useEffect(() => {
@@ -178,6 +181,16 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Ensure logged-out users always have empty songs array
+  useEffect(() => {
+    if (!user) {
+      setSongs([]);
+      setNextId(1);
+      localStorage.removeItem('stageListSongs');
+      localStorage.removeItem('stageListNextId');
+    }
+  }, [user]);
 
   // Auto-save to localStorage whenever songs or title changes
   useEffect(() => {
@@ -756,14 +769,30 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={() => setIsAuthModalOpen(true)}
-                  className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 text-white/70 hover:text-white hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors"
-                  aria-label="Login"
-                >
-                  <LogIn size={20} />
-                  <span className="hidden sm:inline">Login</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setAuthModalMode('signin');
+                      setIsAuthModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 text-white/70 hover:text-white hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors"
+                    aria-label="Login"
+                  >
+                    <LogIn size={20} />
+                    <span className="hidden sm:inline">Login</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuthModalMode('signup');
+                      setIsAuthModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-lg transition-colors"
+                    aria-label="Sign Up"
+                  >
+                    <UserPlus size={20} />
+                    <span className="hidden sm:inline">Sign Up</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -829,22 +858,24 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Save Indicator */}
-                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all w-fit ${
-                  isSaved 
-                    ? 'bg-green-500/90 text-white shadow-lg shadow-green-500/30' 
-                    : 'bg-yellow-500/90 text-white shadow-lg shadow-yellow-500/30 animate-pulse'
-                }`}>
-                  <Save size={14} />
-                  <span>
-                    {isSaved ? 'Saved' : 'Saving...'}
-                  </span>
-                  {user && isSaved && (
-                    <span className="text-[10px]">
-                      ☁️
+                {/* Save Indicator - Only show for logged-in users */}
+                {user && (
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all w-fit ${
+                    isSaved 
+                      ? 'bg-green-500/90 text-white shadow-lg shadow-green-500/30' 
+                      : 'bg-yellow-500/90 text-white shadow-lg shadow-yellow-500/30 animate-pulse'
+                  }`}>
+                    <Save size={14} />
+                    <span>
+                      {isSaved ? 'Saved' : 'Saving...'}
                     </span>
-                  )}
-                </div>
+                    {isSaved && (
+                      <span className="text-[10px]">
+                        ☁️
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               
               {/* Audio Controls */}
@@ -892,8 +923,18 @@ export default function App() {
             </div>
 
             {/* Sign Up CTA Banner - Only show for non-logged-in users */}
-            {!user && (
-              <div className="backdrop-blur-xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 rounded-2xl p-4 md:p-6">
+            {!user && !isCTADismissed && (
+              <div className="backdrop-blur-xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 rounded-2xl p-4 md:p-6 relative">
+                <button
+                  onClick={() => {
+                    setIsCTADismissed(true);
+                    localStorage.setItem('ctaDismissed', 'true');
+                  }}
+                  className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors p-1"
+                  aria-label="Dismiss"
+                >
+                  <X size={20} />
+                </button>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="flex items-start gap-4 flex-1">
                     <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
